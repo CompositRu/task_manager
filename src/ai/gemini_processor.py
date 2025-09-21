@@ -101,9 +101,9 @@ class GeminiProcessor:
 
     async def process_voice_message(self, voice_file_path: str) -> Optional[str]:
         """Обработка голосового сообщения через Gemini Audio API"""
-        if not AUDIO_PROCESSING_AVAILABLE:
-            print("Audio processing unavailable: pydub not working")
-            return None
+        # if not AUDIO_PROCESSING_AVAILABLE:
+        #     print("Audio processing unavailable: pydub not working")
+        #     return None
 
         try:
             # Попытка прямой загрузки OGG файла без конвертации
@@ -163,16 +163,16 @@ class GeminiProcessor:
 
     def is_voice_processing_available(self) -> bool:
         """Проверка доступности обработки голосовых сообщений через Gemini"""
-        return bool(os.getenv('GEMINI_API_KEY')) and AUDIO_PROCESSING_AVAILABLE
+        return bool(os.getenv('GEMINI_API_KEY'))
 
     def get_voice_status_message(self) -> str:
         """Получить сообщение о статусе голосовой обработки"""
         if not os.getenv('GEMINI_API_KEY'):
             return "❌ Недоступна (нет GEMINI_API_KEY)"
         elif not AUDIO_PROCESSING_AVAILABLE:
-            return "⚠️ Частично доступна (без конвертации)"
+            return "✅ Доступна (Gemini Audio, без конвертации)"
         else:
-            return "✅ Доступна (Gemini Audio)"
+            return "✅ Доступна (Gemini Audio с конвертацией)"
 
     def _get_fallback_result(self, text: str) -> Dict[str, Any]:
         """Базовый результат при ошибке Gemini"""

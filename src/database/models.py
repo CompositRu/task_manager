@@ -34,6 +34,9 @@ class DatabaseManager:
             )
         ''')
 
+        # Миграция: добавление недостающих столбцов
+        self._migrate_tasks_table()
+
         # Таблица для напоминаний
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS reminders (
@@ -58,6 +61,33 @@ class DatabaseManager:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+
+        self.conn.commit()
+
+    def _migrate_tasks_table(self):
+        """Миграция таблицы tasks - добавление недостающих столбцов"""
+        cursor = self.conn.cursor()
+
+        # Получаем информацию о существующих столбцах
+        cursor.execute("PRAGMA table_info(tasks)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        # Список новых столбцов, которые нужно добавить
+        new_columns = [
+            ("category", "TEXT"),
+            ("tags", "TEXT"),
+            ("last_condition_check", "TIMESTAMP"),
+            ("condition_check_interval", "INTEGER DEFAULT 86400")
+        ]
+
+        # Добавляем столбцы, которых нет
+        for column_name, column_type in new_columns:
+            if column_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE tasks ADD COLUMN {column_name} {column_type}")
+                    print(f"Added column {column_name} to tasks table")
+                except sqlite3.OperationalError as e:
+                    print(f"Error adding column {column_name}: {e}")
 
         self.conn.commit()
 
