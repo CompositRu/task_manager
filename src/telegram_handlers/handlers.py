@@ -53,9 +53,10 @@ class TaskBotHandlers:
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка голосовых сообщений через Gemini Audio API"""
         if not self.gemini.is_voice_processing_available():
+            status = self.gemini.get_voice_status_message()
             await update.message.reply_text(
-                "🎤 Обработка голосовых сообщений недоступна.\n"
-                "Необходимо настроить GEMINI_API_KEY."
+                f"🎤 Обработка голосовых сообщений недоступна.\n"
+                f"Статус: {status}"
             )
             return
 
@@ -196,7 +197,7 @@ class TaskBotHandlers:
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
-        voice_status = "✅ Доступна (Gemini Audio)" if self.gemini.is_voice_processing_available() else "❌ Недоступна"
+        voice_status = self.gemini.get_voice_status_message()
 
         await update.message.reply_text(
             "👋 Привет! Я помогу организовать твои задачи.\n\n"

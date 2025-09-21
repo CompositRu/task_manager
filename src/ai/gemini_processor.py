@@ -4,7 +4,15 @@ import tempfile
 from datetime import datetime
 from typing import Dict, Any, Optional
 import google.generativeai as genai
-from pydub import AudioSegment
+
+# Попытка импорта pydub с обработкой ошибки для Python 3.13+
+try:
+    from pydub import AudioSegment
+    AUDIO_PROCESSING_AVAILABLE = True
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"Warning: Audio processing unavailable - {e}")
+    AUDIO_PROCESSING_AVAILABLE = False
+    AudioSegment = None
 
 
 class GeminiProcessor:
@@ -93,17 +101,15 @@ class GeminiProcessor:
 
     async def process_voice_message(self, voice_file_path: str) -> Optional[str]:
         """Обработка голосового сообщения через Gemini Audio API"""
+        if not AUDIO_PROCESSING_AVAILABLE:
+            print("Audio processing unavailable: pydub not working")
+            return None
+
         try:
-            # Конвертируем OGG в MP3 (Gemini лучше работает с MP3)
-            audio = AudioSegment.from_ogg(voice_file_path)
-
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
-                audio.export(tmp_mp3.name, format="mp3")
-                mp3_path = tmp_mp3.name
-
+            # Попытка прямой загрузки OGG файла без конвертации
             try:
-                # Загружаем аудио в Gemini
-                audio_file = genai.upload_file(mp3_path)
+                # Загружаем OGG файл напрямую в Gemini
+                audio_file = genai.upload_file(voice_file_path)
 
                 # Транскрибируем через Gemini
                 prompt = """
@@ -120,10 +126,36 @@ class GeminiProcessor:
 
                 return text if text else None
 
-            finally:
-                # Удаляем временный MP3 файл
-                if os.path.exists(mp3_path):
-                    os.unlink(mp3_path)
+            except Exception as direct_error:
+                print(f"Direct OGG upload failed: {direct_error}")
+
+                # Fallback: попытка конвертации если pydub доступен
+                if AudioSegment:
+                    # Конвертируем OGG в MP3 (Gemini лучше работает с MP3)
+                    audio = AudioSegment.from_ogg(voice_file_path)
+
+                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                        audio.export(tmp_mp3.name, format="mp3")
+                        mp3_path = tmp_mp3.name
+
+                    try:
+                        # Загружаем MP3 в Gemini
+                        audio_file = genai.upload_file(mp3_path)
+
+                        response = self.model.generate_content([prompt, audio_file])
+                        text = response.text.strip() if response.text else ""
+
+                        # Удаляем файл из Gemini
+                        genai.delete_file(audio_file.name)
+
+                        return text if text else None
+
+                    finally:
+                        # Удаляем временный MP3 файл
+                        if os.path.exists(mp3_path):
+                            os.unlink(mp3_path)
+                else:
+                    return None
 
         except Exception as e:
             print(f"Ошибка при обработке голосового сообщения через Gemini: {e}")
@@ -131,7 +163,16 @@ class GeminiProcessor:
 
     def is_voice_processing_available(self) -> bool:
         """Проверка доступности обработки голосовых сообщений через Gemini"""
-        return bool(os.getenv('GEMINI_API_KEY'))
+        return bool(os.getenv('GEMINI_API_KEY')) and AUDIO_PROCESSING_AVAILABLE
+
+    def get_voice_status_message(self) -> str:
+        """Получить сообщение о статусе голосовой обработки"""
+        if not os.getenv('GEMINI_API_KEY'):
+            return "❌ Недоступна (нет GEMINI_API_KEY)"
+        elif not AUDIO_PROCESSING_AVAILABLE:
+            return "⚠️ Частично доступна (без конвертации)"
+        else:
+            return "✅ Доступна (Gemini Audio)"
 
     def _get_fallback_result(self, text: str) -> Dict[str, Any]:
         """Базовый результат при ошибке Gemini"""
