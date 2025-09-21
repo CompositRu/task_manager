@@ -353,6 +353,12 @@ class TaskBot:
         except ValueError:
             await update.message.reply_text("Неверный формат. Используйте: /done 123")
     
+    async def get_my_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать ID пользователя"""
+        user_id = update.effective_user.id
+        await update.message.reply_text(f"Ваш Telegram ID: `{user_id}`", parse_mode='Markdown')
+
+
     async def reset_database(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Сброс базы данных (только для админа)"""
         user_id = update.effective_user.id
@@ -399,6 +405,7 @@ class TaskBot:
         app.add_handler(CommandHandler("week", self.show_week))
         app.add_handler(CommandHandler("all", self.show_all))
         app.add_handler(CommandHandler("done", self.mark_done))
+        app.add_handler(CommandHandler("myid", self.get_my_id))
         app.add_handler(CommandHandler("reset_db", self.reset_database))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
