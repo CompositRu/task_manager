@@ -62,7 +62,7 @@ class TaskBotHandlers:
 
         user_id = update.effective_user.id
 
-        await update.message.reply_text("🎤 Обрабатываю голосовое сообщение...")
+        processing_msg = await update.message.reply_text("🎤 Обрабатываю голосовое сообщение...")
 
         try:
             # Скачиваем голосовое сообщение
@@ -78,8 +78,11 @@ class TaskBotHandlers:
                 transcribed_text = await self.gemini.process_voice_message(ogg_path)
 
                 if not transcribed_text:
-                    await update.message.reply_text("😔 Не удалось распознать речь. Попробуйте отправить текстом.")
+                    await processing_msg.edit_text("😔 Не удалось распознать речь. Попробуйте отправить текстом.")
                     return
+
+                # Удаляем сообщение о обработке
+                await processing_msg.delete()
 
                 # Показываем распознанный текст
                 await update.message.reply_text(f"📝 Распознано: _{transcribed_text}_", parse_mode='Markdown')
@@ -94,9 +97,14 @@ class TaskBotHandlers:
 
         except Exception as e:
             print(f"Error processing voice: {e}")
-            await update.message.reply_text(
-                "❌ Ошибка обработки голоса. Попробуйте отправить текстом."
-            )
+            try:
+                await processing_msg.edit_text(
+                    "❌ Ошибка обработки голоса. Попробуйте отправить текстом."
+                )
+            except:
+                await update.message.reply_text(
+                    "❌ Ошибка обработки голоса. Попробуйте отправить текстом."
+                )
 
     async def show_today(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать задачи на сегодня"""

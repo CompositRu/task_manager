@@ -101,15 +101,23 @@ class GeminiProcessor:
 
     async def process_voice_message(self, voice_file_path: str) -> Optional[str]:
         """Обработка голосового сообщения через Gemini Audio API"""
-        # if not AUDIO_PROCESSING_AVAILABLE:
-        #     print("Audio processing unavailable: pydub not working")
-        #     return None
+        import os
+
+        print(f"Processing voice file: {voice_file_path}, size: {os.path.getsize(voice_file_path)} bytes")
 
         try:
             # Попытка прямой загрузки OGG файла без конвертации
             try:
-                # Загружаем OGG файл напрямую в Gemini
-                audio_file = genai.upload_file(voice_file_path)
+                print("Attempting direct OGG upload to Gemini...")
+
+                # Проверяем, что файл существует и читается
+                if not os.path.exists(voice_file_path):
+                    print(f"Voice file does not exist: {voice_file_path}")
+                    return None
+
+                # Загружаем OGG файл напрямую в Gemini с MIME типом
+                audio_file = genai.upload_file(voice_file_path, mime_type="audio/ogg")
+                print(f"File uploaded successfully: {audio_file.name}")
 
                 # Транскрибируем через Gemini
                 prompt = """
@@ -118,8 +126,10 @@ class GeminiProcessor:
                 Если язык русский - транскрибируй на русском.
                 """
 
+                print("Generating transcription...")
                 response = self.model.generate_content([prompt, audio_file])
                 text = response.text.strip() if response.text else ""
+                print(f"Transcription result: '{text}'")
 
                 # Удаляем файл из Gemini
                 genai.delete_file(audio_file.name)
@@ -128,37 +138,98 @@ class GeminiProcessor:
 
             except Exception as direct_error:
                 print(f"Direct OGG upload failed: {direct_error}")
+                print(f"Error type: {type(direct_error)}")
 
                 # Fallback: попытка конвертации если pydub доступен
-                if AudioSegment:
-                    # Конвертируем OGG в MP3 (Gemini лучше работает с MP3)
-                    audio = AudioSegment.from_ogg(voice_file_path)
-
-                    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
-                        audio.export(tmp_mp3.name, format="mp3")
-                        mp3_path = tmp_mp3.name
-
+                if AUDIO_PROCESSING_AVAILABLE and AudioSegment:
+                    print("Attempting OGG to MP3 conversion...")
                     try:
-                        # Загружаем MP3 в Gemini
-                        audio_file = genai.upload_file(mp3_path)
+                        # Конвертируем OGG в MP3 (Gemini лучше работает с MP3)
+                        audio = AudioSegment.from_ogg(voice_file_path)
 
-                        response = self.model.generate_content([prompt, audio_file])
-                        text = response.text.strip() if response.text else ""
+                        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_mp3:
+                            audio.export(tmp_mp3.name, format="mp3")
+                            mp3_path = tmp_mp3.name
 
-                        # Удаляем файл из Gemini
-                        genai.delete_file(audio_file.name)
+                        print(f"Converted to MP3: {mp3_path}, size: {os.path.getsize(mp3_path)} bytes")
 
-                        return text if text else None
+                        try:
+                            # Загружаем MP3 в Gemini
+                            audio_file = genai.upload_file(mp3_path, mime_type="audio/mp3")
+                            print(f"MP3 uploaded successfully: {audio_file.name}")
 
-                    finally:
-                        # Удаляем временный MP3 файл
-                        if os.path.exists(mp3_path):
-                            os.unlink(mp3_path)
+                            # Определяем prompt для MP3
+                            mp3_prompt = """
+                            Транскрибируй это аудио сообщение.
+                            Верни ТОЛЬКО текст того, что было сказано, без дополнительных комментариев.
+                            Если язык русский - транскрибируй на русском.
+                            """
+
+                            response = self.model.generate_content([mp3_prompt, audio_file])
+                            text = response.text.strip() if response.text else ""
+                            print(f"MP3 transcription result: '{text}'")
+
+                            # Удаляем файл из Gemini
+                            genai.delete_file(audio_file.name)
+
+                            return text if text else None
+
+                        finally:
+                            # Удаляем временный MP3 файл
+                            if os.path.exists(mp3_path):
+                                os.unlink(mp3_path)
+
+                    except Exception as conversion_error:
+                        print(f"Conversion failed: {conversion_error}")
+                        return None
                 else:
-                    return None
+                    print("Audio conversion not available (pydub not installed)")
+                    # Последняя попытка: возможно, Gemini принимает OGG с правильным MIME типом
+                    try:
+                        print("Trying OGG with explicit MIME type...")
+
+                        # Копируем файл с правильным расширением
+                        import shutil
+                        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp_ogg:
+                            shutil.copy2(voice_file_path, tmp_ogg.name)
+                            ogg_copy_path = tmp_ogg.name
+
+                        try:
+                            # Загружаем с явным указанием MIME типа
+                            audio_file = genai.upload_file(
+                                ogg_copy_path,
+                                mime_type="audio/ogg"
+                            )
+                            print(f"OGG with MIME uploaded successfully: {audio_file.name}")
+
+                            # Определяем prompt для fallback
+                            fallback_prompt = """
+                            Транскрибируй это аудио сообщение.
+                            Верни ТОЛЬКО текст того, что было сказано, без дополнительных комментариев.
+                            Если язык русский - транскрибируй на русском.
+                            """
+
+                            response = self.model.generate_content([fallback_prompt, audio_file])
+                            text = response.text.strip() if response.text else ""
+                            print(f"OGG MIME transcription result: '{text}'")
+
+                            # Удаляем файл из Gemini
+                            genai.delete_file(audio_file.name)
+
+                            return text if text else None
+
+                        finally:
+                            # Удаляем временный файл
+                            if os.path.exists(ogg_copy_path):
+                                os.unlink(ogg_copy_path)
+
+                    except Exception as mime_error:
+                        print(f"MIME type attempt failed: {mime_error}")
+                        return None
 
         except Exception as e:
             print(f"Ошибка при обработке голосового сообщения через Gemini: {e}")
+            print(f"Error type: {type(e)}")
             return None
 
     def is_voice_processing_available(self) -> bool:
