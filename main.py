@@ -325,6 +325,7 @@ class TaskBot:
             "/week - задачи на неделю\n"
             "/all - все активные задачи\n"
             "/done [id] - отметить выполненной"
+            "/reset_db - удаление базы данных (только админ)"
         )
     
     async def mark_done(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -352,6 +353,42 @@ class TaskBot:
         except ValueError:
             await update.message.reply_text("Неверный формат. Используйте: /done 123")
     
+    async def reset_database(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Сброс базы данных (только для админа)"""
+        user_id = update.effective_user.id
+        
+        # Получаем ID админа из переменных окружения
+        admin_id = os.getenv('ADMIN_TELEGRAM_ID')
+        
+        # Если не задан админ, команда недоступна
+        if not admin_id:
+            await update.message.reply_text("❌ Админ не настроен")
+            return
+        
+        # Проверяем права
+        if str(user_id) != admin_id:
+            await update.message.reply_text("❌ У вас нет прав для этой команды")
+            return
+        
+        # Подтверждение
+        if not context.args or context.args[0] != 'confirm':
+            await update.message.reply_text(
+                "⚠️ Это удалит ВСЕ задачи!\n"
+                "Для подтверждения используйте:\n"
+                "`/reset_db confirm`",
+                parse_mode='Markdown'
+            )
+            return
+        
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("DROP TABLE IF EXISTS tasks")
+            self.conn.commit()
+            self.setup_database()  # Создаём таблицу заново
+            await update.message.reply_text("✅ База данных успешно сброшена!")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Ошибка: {e}")
+
     def run(self):
         """Запуск бота"""
         app = Application.builder().token(self.telegram_token).build()
@@ -362,6 +399,7 @@ class TaskBot:
         app.add_handler(CommandHandler("week", self.show_week))
         app.add_handler(CommandHandler("all", self.show_all))
         app.add_handler(CommandHandler("done", self.mark_done))
+        app.add_handler(CommandHandler("reset_db", self.reset_database))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
         print("🤖 Бот запущен! Нажмите Ctrl+C для остановки.")
