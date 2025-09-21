@@ -11,8 +11,8 @@ logging.getLogger('absl').setLevel(logging.ERROR)
 import json
 import sqlite3
 from datetime import datetime, timedelta, date
-from dateutil import parser
-from dateutil.relativedelta import relativedelta
+# from dateutil import parser
+# from dateutil.relativedelta import relativedelta
 import re
 from dotenv import load_dotenv
 import google.generativeai as genai
