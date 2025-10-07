@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
 
@@ -237,6 +237,75 @@ class DatabaseManager:
             WHERE id = ?
         ''', (reminder_id,))
         self.conn.commit()
+
+    def get_future_reminders(self, hours: int = 72, from_hours: int = 0) -> List[tuple]:
+        """
+        Получить будущие напоминания в интервале времени.
+
+        Args:
+            hours: Верхняя граница интервала (часов от текущего момента)
+            from_hours: Нижняя граница интервала (часов от текущего момента)
+
+        Returns:
+            List of tuples: (id, task_id, user_id, title, reminder_type, reminder_time)
+        """
+        cursor = self.conn.cursor()
+        now = datetime.now()
+        start_time = now + timedelta(hours=from_hours)
+        end_time = now + timedelta(hours=hours)
+
+        cursor.execute('''
+            SELECT r.id, r.task_id, r.user_id, t.title, r.reminder_type, r.reminder_time
+            FROM reminders r
+            JOIN tasks t ON r.task_id = t.id
+            WHERE r.is_sent = FALSE
+                AND r.reminder_time >= ?
+                AND r.reminder_time <= ?
+                AND t.status = 'active'
+            ORDER BY r.reminder_time ASC
+        ''', (start_time, end_time))
+
+        return cursor.fetchall()
+
+    def delete_old_reminders(self, days_old: int = 7) -> int:
+        """
+        Удалить старые отправленные напоминания.
+
+        Args:
+            days_old: Удалить напоминания старше N дней
+
+        Returns:
+            Количество удалённых записей
+        """
+        cursor = self.conn.cursor()
+        cutoff_time = datetime.now() - timedelta(days=days_old)
+
+        cursor.execute('''
+            DELETE FROM reminders
+            WHERE is_sent = TRUE
+                AND reminder_time < ?
+        ''', (cutoff_time,))
+
+        deleted = cursor.rowcount
+        self.conn.commit()
+        return deleted
+
+    def get_last_reminder_id(self) -> int:
+        """Получить ID последнего добавленного напоминания"""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT last_insert_rowid()')
+        result = cursor.fetchone()
+        return result[0] if result else 0
+
+    def get_task_by_id(self, task_id: int) -> Optional[tuple]:
+        """Получить задачу по ID"""
+        cursor = self.conn.cursor()
+        cursor.execute('''
+            SELECT id, user_id, title, description, priority, due_date, category, tags, status
+            FROM tasks
+            WHERE id = ?
+        ''', (task_id,))
+        return cursor.fetchone()
 
     def create_category(self, user_id: int, name: str, color: str = None) -> int:
         """Создать категорию"""
