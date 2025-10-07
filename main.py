@@ -12,10 +12,11 @@ logging.getLogger('absl').setLevel(logging.ERROR)
 
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 
 from src.database.models import DatabaseManager
 from src.telegram_handlers.handlers import TaskBotHandlers
+from src.telegram_handlers.callback_handlers import CallbackHandler
 from src.reminders.scheduler import ReminderScheduler
 from src.reminders.smart_scheduler import SmartReminderScheduler
 from src.config.manager import ConfigManager
@@ -61,6 +62,7 @@ class ModularTaskBot:
 
         # Инициализация handlers с передачей scheduler
         self.handlers = TaskBotHandlers(self.db, self.reminder_scheduler)
+        self.callback_handler = CallbackHandler(self.db, self.reminder_scheduler)
 
         # Telegram Application
         self.app = None
@@ -90,11 +92,15 @@ class ModularTaskBot:
         self.app.add_handler(CommandHandler("done", self.handlers.mark_done))
         self.app.add_handler(CommandHandler("myid", self.handlers.get_my_id))
         self.app.add_handler(CommandHandler("reset_db", self.handlers.reset_database))
+        self.app.add_handler(CommandHandler("settings", self.handlers.show_settings))
 
-        # Обработка сообщений
+        # Обработка callback query (Inline кнопки)
+        self.app.add_handler(CallbackQueryHandler(self.callback_handler.handle_callback_query))
+
+        # Обработка сообщений (включая Reply кнопки)
         self.app.add_handler(MessageHandler(
             filters.TEXT & ~filters.COMMAND,
-            self.handlers.handle_message
+            self.handlers.handle_reply_button
         ))
 
         # Обработка голосовых сообщений

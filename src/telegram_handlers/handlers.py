@@ -11,6 +11,7 @@ from src.voice.whisper_processor import VoiceProcessor
 from src.categories.manager import CategoryManager
 from src.reminders.scheduler import ReminderScheduler
 from src.config.manager import ConfigManager
+from src.telegram_ui.keyboards import KeyboardBuilder
 
 
 class TaskBotHandlers:
@@ -21,6 +22,7 @@ class TaskBotHandlers:
         self.category_manager = CategoryManager(db)
         self.reminder_scheduler = reminder_scheduler
         self.config = ConfigManager()
+        self.keyboards = KeyboardBuilder()
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
@@ -123,12 +125,15 @@ class TaskBotHandlers:
         message = f"📋 *Задачи на сегодня ({datetime.now().strftime('%d.%m.%Y')}):*\n"
         message += self.category_manager.format_tasks_by_category(tasks)
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+        # Добавляем inline кнопки для задач
+        keyboard = self.keyboards.get_task_list_keyboard(tasks[:10])
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=keyboard)
 
     async def show_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать все активные задачи"""
         user_id = update.effective_user.id
-        tasks = self.db.get_all_active_tasks(user_id)
+        tasks = self.db.get_all_tasks(user_id)
+        tasks = [t for t in tasks if t[8] == 'active']  # Фильтр активных
 
         if not tasks:
             await update.message.reply_text("📭 Нет активных задач")
@@ -137,7 +142,9 @@ class TaskBotHandlers:
         message = "📋 *Все активные задачи:*\n"
         message += self.category_manager.format_tasks_by_category(tasks)
 
-        await update.message.reply_text(message, parse_mode='Markdown')
+        # Добавляем inline кнопки
+        keyboard = self.keyboards.get_task_list_keyboard(tasks[:10])
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=keyboard)
 
     async def show_week(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать задачи на неделю"""
@@ -210,6 +217,8 @@ class TaskBotHandlers:
         """Команда /start"""
         voice_status = self.gemini.get_voice_status_message()
 
+        keyboard = self.keyboards.get_main_menu_keyboard()
+
         await update.message.reply_text(
             "👋 Привет! Я помогу организовать твои задачи.\n\n"
             "📝 Просто отправь мне задачу текстом или голосовым сообщением.\n\n"
@@ -221,8 +230,10 @@ class TaskBotHandlers:
             "/categories - мои категории\n"
             "/category [название] - задачи по категории\n"
             "/done [id] - отметить выполненной\n"
+            "/settings - настройки\n"
             "/myid - мой ID\n"
-            "/reset_db - удаление базы данных (только админ)"
+            "/reset_db - удаление базы данных (только админ)",
+            reply_markup=keyboard
         )
 
     async def get_my_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -385,6 +396,9 @@ class TaskBotHandlers:
         # Иконка голосового сообщения
         voice_emoji = "🎤 " if is_voice else ""
 
+        # Добавляем кнопки действий
+        keyboard = self.keyboards.get_task_actions_keyboard(task_id)
+
         await update.message.reply_text(
             f"✅ {voice_emoji}Задача #{task_id} сохранена!\n\n"
             f"📝 *{structured['title']}*\n"
@@ -393,5 +407,36 @@ class TaskBotHandlers:
             f"{category_text}"
             f"{tags_text}"
             f"{conditions_text}",
-            parse_mode='Markdown'
+            parse_mode='Markdown',
+            reply_markup=keyboard
+        )
+
+    async def handle_reply_button(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка нажатий на Reply кнопки"""
+        text = update.message.text
+
+        if text == '📋 Сегодня':
+            await self.show_today(update, context)
+        elif text == '📅 Неделя':
+            await self.show_week(update, context)
+        elif text == '✅ Все задачи':
+            await self.show_all(update, context)
+        elif text == '📂 Категории':
+            await self.show_categories(update, context)
+        elif text == '⚙️ Настройки':
+            await self.show_settings(update, context)
+        elif text == '❓ Помощь':
+            await self.start(update, context)
+        else:
+            # Это обычное сообщение - создаем задачу
+            await self.handle_message(update, context)
+
+    async def show_settings(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать настройки"""
+        keyboard = self.keyboards.get_settings_keyboard()
+        await update.message.reply_text(
+            "⚙️ *Настройки*\n\n"
+            "Выберите раздел:",
+            parse_mode='Markdown',
+            reply_markup=keyboard
         )
