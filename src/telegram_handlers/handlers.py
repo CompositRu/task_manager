@@ -10,14 +10,17 @@ from src.ai.gemini_processor import GeminiProcessor
 from src.voice.whisper_processor import VoiceProcessor
 from src.categories.manager import CategoryManager
 from src.reminders.scheduler import ReminderScheduler
+from src.config.manager import ConfigManager
 
 
 class TaskBotHandlers:
-    def __init__(self, db: DatabaseManager):
+    def __init__(self, db: DatabaseManager, reminder_scheduler: ReminderScheduler = None):
         self.db = db
         self.gemini = GeminiProcessor()
         self.voice_processor = VoiceProcessor()  # Заглушка для совместимости
         self.category_manager = CategoryManager(db)
+        self.reminder_scheduler = reminder_scheduler
+        self.config = ConfigManager()
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
@@ -256,7 +259,10 @@ class TaskBotHandlers:
             await update.message.reply_text(f"❌ Ошибка: {e}")
 
     async def _schedule_reminders(self, task_id: int, user_id: int, structured: dict):
-        """Планирование напоминаний для задачи"""
+        """Планирование напоминаний для задачи на основе конфигурации"""
+        if not self.reminder_scheduler:
+            return
+
         # Если указано конкретное время напоминания
         if structured.get('reminder_needed') and structured.get('reminder_time'):
             try:
@@ -265,22 +271,81 @@ class TaskBotHandlers:
 
                 # Планируем на сегодня или завтра
                 reminder_date = date.today()
-                if datetime.now().time() > datetime.time(hour, minute):
+                from datetime import time as dt_time
+                if datetime.now().time() > dt_time(hour, minute):
                     reminder_date = reminder_date + timedelta(days=1)
 
-                reminder_datetime = datetime.combine(reminder_date, datetime.time(hour, minute))
+                reminder_datetime = datetime.combine(reminder_date, dt_time(hour, minute))
 
-                # Здесь нужно будет добавить планировщик
-                # self.reminder_scheduler.schedule_task_reminder(task_id, user_id, reminder_datetime)
+                self.reminder_scheduler.schedule_task_reminder(task_id, user_id, reminder_datetime)
 
             except Exception as e:
                 print(f"Ошибка планирования напоминания: {e}")
 
-        # Напоминание о дедлайне
+        # Напоминания о дедлайне (из конфигурации)
         if structured.get('due_date'):
             try:
                 due_date = datetime.strptime(structured['due_date'], '%Y-%m-%d')
-                # self.reminder_scheduler.schedule_deadline_reminder(task_id, user_id, due_date)
+                from datetime import time as dt_time
+
+                # Если есть точное время события - используем его
+                if structured.get('has_specific_time') and structured.get('due_time'):
+                    try:
+                        # Создаем полный datetime события
+                        event_hour, event_minute = map(int, structured['due_time'].split(':'))
+                        event_datetime = datetime.combine(due_date.date(), dt_time(event_hour, event_minute))
+
+                        # Проверяем, включены ли напоминания по времени
+                        if self.config.is_time_based_reminders_enabled():
+                            # Напоминания за N часов
+                            hours_before = self.config.get_time_based_hours_before()
+                            for hours in hours_before:
+                                reminder_datetime = event_datetime - timedelta(hours=hours)
+                                if reminder_datetime > datetime.now():
+                                    self.reminder_scheduler.schedule_task_reminder(
+                                        task_id, user_id, reminder_datetime, 'time_based'
+                                    )
+                                    print(f"Запланировано напоминание на {reminder_datetime} (за {hours} ч. до {structured['due_time']})")
+
+                            # Напоминания за N минут (если настроены)
+                            minutes_before = self.config.get_time_based_minutes_before()
+                            for minutes in minutes_before:
+                                reminder_datetime = event_datetime - timedelta(minutes=minutes)
+                                if reminder_datetime > datetime.now():
+                                    self.reminder_scheduler.schedule_task_reminder(
+                                        task_id, user_id, reminder_datetime, 'time_based'
+                                    )
+                                    print(f"Запланировано напоминание на {reminder_datetime} (за {minutes} мин. до {structured['due_time']})")
+
+                    except Exception as e:
+                        print(f"Ошибка планирования напоминаний по времени: {e}")
+
+                # Стандартные напоминания о дедлайне (по дням)
+                deadline_reminders = self.config.get_deadline_reminders()
+
+                for reminder_config in deadline_reminders:
+                    days_before = reminder_config.get('days_before', 0)
+                    time_str = reminder_config.get('time', '09:00')
+
+                    # Парсим время
+                    try:
+                        hour, minute = map(int, time_str.split(':'))
+                        reminder_time = dt_time(hour, minute)
+                    except:
+                        print(f"Неверный формат времени в конфиге: {time_str}")
+                        continue
+
+                    # Вычисляем дату напоминания
+                    reminder_date = due_date.date() - timedelta(days=days_before)
+                    reminder_datetime = datetime.combine(reminder_date, reminder_time)
+
+                    # Создаем напоминание только если оно в будущем
+                    if reminder_datetime > datetime.now():
+                        self.reminder_scheduler.schedule_task_reminder(
+                            task_id, user_id, reminder_datetime, 'deadline'
+                        )
+                        print(f"Запланировано напоминание на {reminder_datetime} (за {days_before} дней)")
+
             except Exception as e:
                 print(f"Ошибка планирования напоминания о дедлайне: {e}")
 

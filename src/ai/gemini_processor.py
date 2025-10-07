@@ -37,7 +37,9 @@ class GeminiProcessor:
             "priority": "high/medium/low",
             "context": ["дом", "работа", "дорога"],
             "due_date": "YYYY-MM-DD или null",
+            "due_time": "HH:MM или null (если указано конкретное время события)",
             "has_specific_date": true/false,
+            "has_specific_time": true/false,
             "category": "работа/дом/личное/учеба или null",
             "tags": ["тег1", "тег2"],
             "reminder_needed": true/false,
@@ -46,6 +48,8 @@ class GeminiProcessor:
 
         Правила извлечения:
         - Дата: конкретные даты, дни недели, "завтра", "послезавтра"
+        - Время события (due_time): если указано конкретное время выполнения задачи ("встреча в 15:00", "позвонить в 10:30")
+        - has_specific_time: true если есть конкретное время выполнения задачи
         - Категория: автоматически определи из контекста (работа, дом, личное, учеба)
         - Теги: ключевые слова или проекты из текста
         - Напоминание: если упоминается время или "напомни"
@@ -254,7 +258,9 @@ class GeminiProcessor:
             "priority": "medium",
             "context": [],
             "due_date": None,
+            "due_time": None,
             "has_specific_date": False,
+            "has_specific_time": False,
             "category": None,
             "tags": [],
             "reminder_needed": False,
