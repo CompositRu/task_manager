@@ -62,7 +62,57 @@ class DatabaseManager:
             )
         ''')
 
+        # Создание индексов для оптимизации запросов
+        self._create_indexes()
+
         self.conn.commit()
+
+    def _create_indexes(self):
+        """Создание индексов для ускорения запросов"""
+        cursor = self.conn.cursor()
+
+        # Индексы для таблицы tasks
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tasks_user_id
+            ON tasks(user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tasks_user_status
+            ON tasks(user_id, status)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tasks_due_date
+            ON tasks(due_date)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_tasks_category
+            ON tasks(user_id, category)
+        ''')
+
+        # Индексы для таблицы reminders
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reminders_user_id
+            ON reminders(user_id)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reminders_time
+            ON reminders(reminder_time, is_sent)
+        ''')
+
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_reminders_task
+            ON reminders(task_id)
+        ''')
+
+        # Индексы для таблицы categories
+        cursor.execute('''
+            CREATE INDEX IF NOT EXISTS idx_categories_user_id
+            ON categories(user_id)
+        ''')
 
     def _migrate_tasks_table(self):
         """Миграция таблицы tasks - добавление недостающих столбцов"""
@@ -327,6 +377,78 @@ class DatabaseManager:
             ORDER BY name
         ''', (user_id,))
         return cursor.fetchall()
+
+    def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        """
+        Получить статистику пользователя
+
+        Returns:
+            Dict с ключами:
+            - total_tasks: общее количество задач
+            - active_tasks: активные задачи
+            - completed_tasks: выполненные задачи
+            - tasks_by_priority: разбивка по приоритетам
+            - tasks_by_category: разбивка по категориям
+            - active_reminders: количество активных напоминаний
+            - overdue_tasks: просроченные задачи
+        """
+        cursor = self.conn.cursor()
+        stats = {}
+
+        # Общее количество задач
+        cursor.execute('''
+            SELECT COUNT(*) FROM tasks WHERE user_id = ?
+        ''', (user_id,))
+        stats['total_tasks'] = cursor.fetchone()[0]
+
+        # Активные задачи
+        cursor.execute('''
+            SELECT COUNT(*) FROM tasks WHERE user_id = ? AND status = 'active'
+        ''', (user_id,))
+        stats['active_tasks'] = cursor.fetchone()[0]
+
+        # Выполненные задачи
+        cursor.execute('''
+            SELECT COUNT(*) FROM tasks WHERE user_id = ? AND status = 'completed'
+        ''', (user_id,))
+        stats['completed_tasks'] = cursor.fetchone()[0]
+
+        # Разбивка по приоритетам (только активные)
+        cursor.execute('''
+            SELECT priority, COUNT(*) as count
+            FROM tasks
+            WHERE user_id = ? AND status = 'active'
+            GROUP BY priority
+        ''', (user_id,))
+        stats['tasks_by_priority'] = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Разбивка по категориям (только активные)
+        cursor.execute('''
+            SELECT category, COUNT(*) as count
+            FROM tasks
+            WHERE user_id = ? AND status = 'active' AND category IS NOT NULL
+            GROUP BY category
+        ''', (user_id,))
+        stats['tasks_by_category'] = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Активные напоминания
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM reminders
+            WHERE user_id = ? AND is_sent = FALSE
+        ''', (user_id,))
+        stats['active_reminders'] = cursor.fetchone()[0]
+
+        # Просроченные задачи
+        today = datetime.now().date()
+        cursor.execute('''
+            SELECT COUNT(*)
+            FROM tasks
+            WHERE user_id = ? AND status = 'active' AND due_date < ?
+        ''', (user_id, today))
+        stats['overdue_tasks'] = cursor.fetchone()[0]
+
+        return stats
 
     def reset_database(self):
         """Сброс базы данных"""
