@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta, time
 from typing import List, Callable, Awaitable
 from src.database.models import DatabaseManager
+from src.config.manager import ConfigManager
 
 
 class ReminderScheduler:
@@ -10,7 +11,15 @@ class ReminderScheduler:
         self.db = db
         self.send_reminder_callback = send_reminder_callback
         self.is_running = False
-        self.morning_reminder_time = time(9, 0)  # 9:00 утра
+        self.config = ConfigManager()
+
+        # Загружаем время утренних напоминаний из конфига
+        morning_time_str = self.config.get_morning_reminder_time()
+        try:
+            hour, minute = map(int, morning_time_str.split(':'))
+            self.morning_reminder_time = time(hour, minute)
+        except:
+            self.morning_reminder_time = time(9, 0)  # Fallback на 9:00
 
     def set_morning_reminder_time(self, hour: int, minute: int = 0):
         """Установить время утренних напоминаний"""
@@ -19,16 +28,19 @@ class ReminderScheduler:
     async def start_scheduler(self):
         """Запуск планировщика напоминаний"""
         self.is_running = True
-        logging.info("Планировщик напоминаний запущен")
+
+        # Получаем интервал проверки из конфигурации
+        check_interval = self.config.get_check_interval()
+        logging.info(f"Планировщик напоминаний запущен (интервал проверки: {check_interval} сек)")
 
         while self.is_running:
             try:
                 await self._check_and_send_reminders()
                 await self._check_condition_reminders()
-                await asyncio.sleep(60)  # Проверка каждую минуту
+                await asyncio.sleep(check_interval)
             except Exception as e:
                 logging.error(f"Ошибка в планировщике напоминаний: {e}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(check_interval)
 
     def stop_scheduler(self):
         """Остановка планировщика"""

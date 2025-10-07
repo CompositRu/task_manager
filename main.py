@@ -17,6 +17,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from src.database.models import DatabaseManager
 from src.telegram_handlers.handlers import TaskBotHandlers
 from src.reminders.scheduler import ReminderScheduler
+from src.reminders.smart_scheduler import SmartReminderScheduler
+from src.config.manager import ConfigManager
 
 load_dotenv()
 
@@ -38,13 +40,27 @@ class ModularTaskBot:
         # Инициализация компонентов
         self.telegram_token = os.getenv('TELEGRAM_TOKEN')
         self.db = DatabaseManager()
-        self.handlers = TaskBotHandlers(self.db)
+        self.config = ConfigManager()
+
+        # Определяем тип планировщика из конфига
+        scheduler_type = self.config.get_scheduler_type()
 
         # Инициализация планировщика напоминаний
-        self.reminder_scheduler = ReminderScheduler(
-            db=self.db,
-            send_reminder_callback=self.send_reminder
-        )
+        if scheduler_type == 'smart':
+            logger.info("Используется SmartReminderScheduler (event-driven)")
+            self.reminder_scheduler = SmartReminderScheduler(
+                db=self.db,
+                send_reminder_callback=self.send_reminder
+            )
+        else:
+            logger.info("Используется ReminderScheduler (polling)")
+            self.reminder_scheduler = ReminderScheduler(
+                db=self.db,
+                send_reminder_callback=self.send_reminder
+            )
+
+        # Инициализация handlers с передачей scheduler
+        self.handlers = TaskBotHandlers(self.db, self.reminder_scheduler)
 
         # Telegram Application
         self.app = None
