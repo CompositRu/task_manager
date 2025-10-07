@@ -18,7 +18,7 @@ except (ImportError, ModuleNotFoundError) as e:
 class GeminiProcessor:
     def __init__(self):
         genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
 
     def process_task_text(self, text: str) -> Dict[str, Any]:
         """Обработка текста задачи через Gemini с извлечением всех параметров"""
