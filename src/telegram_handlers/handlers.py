@@ -132,8 +132,7 @@ class TaskBotHandlers:
     async def show_all(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать все активные задачи"""
         user_id = update.effective_user.id
-        tasks = self.db.get_all_tasks(user_id)
-        tasks = [t for t in tasks if t[8] == 'active']  # Фильтр активных
+        tasks = self.db.get_all_active_tasks(user_id)
 
         if not tasks:
             await update.message.reply_text("📭 Нет активных задач")
@@ -216,10 +215,12 @@ class TaskBotHandlers:
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
         voice_status = self.gemini.get_voice_status_message()
+        user_id = update.effective_user.id
+        admin_id = os.getenv('ADMIN_TELEGRAM_ID')
 
         keyboard = self.keyboards.get_main_menu_keyboard()
 
-        await update.message.reply_text(
+        help_text = (
             "👋 Привет! Я помогу организовать твои задачи.\n\n"
             "📝 Просто отправь мне задачу текстом или голосовым сообщением.\n\n"
             "🎤 Голосовые сообщения: " + voice_status + "\n\n"
@@ -231,10 +232,14 @@ class TaskBotHandlers:
             "/category [название] - задачи по категории\n"
             "/done [id] - отметить выполненной\n"
             "/settings - настройки\n"
-            "/myid - мой ID\n"
-            "/reset_db - удаление базы данных (только админ)",
-            reply_markup=keyboard
+            "/myid - мой ID"
         )
+
+        # Добавляем команду reset_db только для админа
+        if admin_id and str(user_id) == admin_id:
+            help_text += "\n/reset_db - удаление базы данных (только админ)"
+
+        await update.message.reply_text(help_text, reply_markup=keyboard)
 
     async def get_my_id(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать ID пользователя"""

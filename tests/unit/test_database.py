@@ -175,3 +175,73 @@ def test_user_isolation(temp_db, sample_task_data):
 
     assert len(user2_tasks) == 1
     assert user2_tasks[0][0] == task2_id
+
+
+def test_get_all_active_tasks(temp_db, sample_user_id, sample_task_data):
+    """Тест получения всех активных задач"""
+    # Создаём несколько активных задач с разными датами
+    task_data_1 = sample_task_data.copy()
+    task_data_1['due_date'] = '2025-10-10'
+    task_data_1['priority'] = 'high'
+
+    task_data_2 = sample_task_data.copy()
+    task_data_2['due_date'] = '2025-10-15'
+    task_data_2['priority'] = 'medium'
+
+    task_data_3 = sample_task_data.copy()
+    task_data_3['due_date'] = None
+    task_data_3['priority'] = 'low'
+
+    task1_id = temp_db.save_task(sample_user_id, "Задача 1", task_data_1)
+    task2_id = temp_db.save_task(sample_user_id, "Задача 2", task_data_2)
+    task3_id = temp_db.save_task(sample_user_id, "Задача 3", task_data_3)
+
+    # Получаем все активные задачи
+    tasks = temp_db.get_all_active_tasks(sample_user_id)
+
+    # Должно быть 3 задачи
+    assert len(tasks) == 3
+
+    # Проверяем, что все задачи присутствуют
+    task_ids = [task[0] for task in tasks]
+    assert task1_id in task_ids
+    assert task2_id in task_ids
+    assert task3_id in task_ids
+
+    # Проверяем сортировку: задачи с датами должны быть первыми
+    # task1 и task2 должны быть раньше task3 (у которого нет даты)
+    tasks_with_dates = [t for t in tasks if t[4] is not None]  # Index 4 is due_date
+    tasks_without_dates = [t for t in tasks if t[4] is None]
+
+    assert len(tasks_with_dates) == 2
+    assert len(tasks_without_dates) == 1
+
+    # Проверяем, что задачи с датами идут первыми
+    for i, task in enumerate(tasks):
+        if task[4] is None:  # Если нашли задачу без даты
+            # Все предыдущие должны иметь дату
+            for prev_task in tasks[:i]:
+                assert prev_task[4] is not None
+
+
+def test_get_all_active_tasks_excludes_completed(temp_db, sample_user_id, sample_task_data):
+    """Тест что get_all_active_tasks исключает выполненные задачи"""
+    # Создаём активную задачу
+    task1_id = temp_db.save_task(sample_user_id, "Активная задача", sample_task_data)
+
+    # Создаём задачу и отмечаем её как выполненную
+    task2_id = temp_db.save_task(sample_user_id, "Выполненная задача", sample_task_data)
+    temp_db.mark_task_done(task2_id, sample_user_id)
+
+    # Получаем все активные задачи
+    tasks = temp_db.get_all_active_tasks(sample_user_id)
+
+    # Должна быть только одна активная задача
+    assert len(tasks) == 1
+    assert tasks[0][0] == task1_id
+
+
+def test_get_all_active_tasks_empty(temp_db, sample_user_id):
+    """Тест получения задач когда их нет"""
+    tasks = temp_db.get_all_active_tasks(sample_user_id)
+    assert len(tasks) == 0
