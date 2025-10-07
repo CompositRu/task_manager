@@ -2,3 +2,4 @@ python-telegram-bot
 google-generativeai
 python-dateutil
 python-dotenv
+pyyaml
